@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package wallet;
+
+option java_multiple_files = true;
+option java_package = "ds.cw.grpc";
+option java_outer_classname = "WalletProto";
+
+/* =========================
+   WALLET SERVICE
+   ========================= */
+service WalletService {
+
+  // Create a new wallet account
+  rpc CreateAccount (CreateAccountRequest)
+      returns (CreateAccountResponse);
+
+  // Get current balance
+  rpc GetBalance (BalanceRequest)
+      returns (BalanceResponse);
+
+  // Deposit money
+  rpc Deposit (TransactionRequest)
+      returns (TransactionResponse);
+
+  // Withdraw money
+  rpc Withdraw (TransactionRequest)
+      returns (TransactionResponse);
+}
+
+/* =========================
+   MESSAGES
+   ========================= */
+
+message CreateAccountRequest {
+  string account_id = 1;
+}
+
+message CreateAccountResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message BalanceRequest {
+  string account_id = 1;
+}
+
+message BalanceResponse {
+  double balance = 1;
+}
+
+message TransactionRequest {
+  string account_id = 1;
+  double amount = 2;
+  string request_id = 3;
+}
+
+message TransactionResponse {
+  bool success = 1;
+  double balance = 2;
+  string message = 3;
+}
