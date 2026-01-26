@@ -38,7 +38,12 @@
             <version>${grpc.version}</version>
         </dependency>
 
-        <!-- Needed for Java 9+ -->
+        <dependency>
+            <groupId>org.apache.zookeeper</groupId>
+            <artifactId>zookeeper</artifactId>
+            <version>3.8.3</version>
+        </dependency>
+
         <dependency>
             <groupId>javax.annotation</groupId>
             <artifactId>javax.annotation-api</artifactId>
