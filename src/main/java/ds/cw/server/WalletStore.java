@@ -7,14 +7,12 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class WalletStore {
 
-    private final ConcurrentHashMap<String, Account> accounts =
-            new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Account> accounts = new ConcurrentHashMap<>();
 
-    private final Set<String> processedRequests =
-            ConcurrentHashMap.newKeySet();
+    private final Set<String> processedRequests = ConcurrentHashMap.newKeySet();
 
     public boolean isDuplicate(String requestId) {
-        return !processedRequests.add(requestId);
+        return processedRequests.contains(requestId);
     }
 
     public boolean createAccount(String accountId) {

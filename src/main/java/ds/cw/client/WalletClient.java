@@ -4,255 +4,177 @@ import ds.cw.grpc.*;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Scanner;
 import java.util.UUID;
 
 public class WalletClient {
 
-    private final WalletServiceGrpc.WalletServiceBlockingStub stub;
+    private final Map<String, WalletServiceGrpc.WalletServiceBlockingStub> stubs = new HashMap<>();
+    private final Map<String, ManagedChannel> channels = new HashMap<>();
 
-    public WalletClient(String host, int port) {
-        ManagedChannel channel =
-                ManagedChannelBuilder.forAddress(host, port)
-                        .usePlaintext()
-                        .build();
+    public WalletClient() {
+        // Initialize connections to known shards
+        // In a real system, these might come from a configuration file or ZooKeeper
+        addShard("1", "localhost", 9000);
+        addShard("2", "localhost", 9001);
+    }
 
-        stub = WalletServiceGrpc.newBlockingStub(channel);
+    private void addShard(String shardId, String host, int port) {
+        ManagedChannel channel = ManagedChannelBuilder.forAddress(host, port)
+                .usePlaintext()
+                .build();
+        channels.put(shardId, channel);
+        stubs.put(shardId, WalletServiceGrpc.newBlockingStub(channel));
+    }
+
+    private String getShardForAccount(String accountId) {
+        if (accountId.startsWith("1"))
+            return "1";
+        if (accountId.startsWith("2"))
+            return "2";
+        return "1";
+    }
+
+    private WalletServiceGrpc.WalletServiceBlockingStub getStub(String accountId) {
+        String shardId = getShardForAccount(accountId);
+        return stubs.get(shardId);
     }
 
     public void start() {
         Scanner sc = new Scanner(System.in);
-
         while (true) {
-            System.out.println("\n--- WALLET CLIENT ---");
-            System.out.println("1. Create Account");
+            System.out.println("\n--- SHARDED WALLET CLIENT ---");
+            System.out.println("1. Create Account (Shard 1: 1xxx, Shard 2: 2xxx)");
             System.out.println("2. Get Balance");
             System.out.println("3. Deposit");
             System.out.println("4. Withdraw");
+            System.out.println("5. Transfer Money (Internal or Cross-Shard)");
             System.out.println("0. Exit");
             System.out.print("Choose: ");
 
-            int choice = sc.nextInt();
-            sc.nextLine(); // consume newline
-
-            switch (choice) {
-                case 1 -> createAccount(sc);
-                case 2 -> getBalance(sc);
-                case 3 -> deposit(sc);
-                case 4 -> withdraw(sc);
-                case 0 -> {
-                    System.out.println("Goodbye!");
-                    return;
+            try {
+                int choice = Integer.parseInt(sc.nextLine());
+                switch (choice) {
+                    case 1 -> createAccount(sc);
+                    case 2 -> getBalance(sc);
+                    case 3 -> deposit(sc);
+                    case 4 -> withdraw(sc);
+                    case 5 -> transfer(sc);
+                    case 0 -> {
+                        shutdown();
+                        return;
+                    }
+                    default -> System.out.println("Invalid option");
                 }
-                default -> System.out.println("Invalid option");
+            } catch (Exception e) {
+                System.out.println("Error: " + e.getMessage());
             }
         }
     }
 
-//    private void createAccount(Scanner sc) {
-//        System.out.print("Account ID: ");
-//        String id = sc.nextLine();
-//
-//        CreateAccountResponse res =
-//                stub.createAccount(
-//                        CreateAccountRequest.newBuilder()
-//                                .setAccountId(id)
-//                                .build()
-//                );
-//
-//        System.out.println(res.getMessage());
-//    }
-private void createAccount(Scanner sc) {
-    System.out.print("Account ID: ");
-    String id = sc.nextLine();
+    private void createAccount(Scanner sc) {
+        System.out.print("Enter target Account ID (e.g., 101 or 201): ");
+        String id = sc.nextLine();
 
-    CreateAccountRequest request =
-            CreateAccountRequest.newBuilder()
-                    .setAccountId(id)
-                    .build();
-
-    try {
-        CreateAccountResponse res = stub.createAccount(request);
-        System.out.println(res.getMessage());
-
-    } catch (Exception e) {
-        System.out.println("Server error, retrying...");
+        CreateAccountRequest req = CreateAccountRequest.newBuilder().setAccountId(id).build();
         try {
-            CreateAccountResponse res = stub.createAccount(request);
-            System.out.println(res.getMessage());
-        } catch (Exception ex) {
-            System.out.println("Failed to create account");
+            CreateAccountResponse res = getStub(id).createAccount(req);
+            System.out.println("RESULT: " + res.getMessage());
+        } catch (Exception e) {
+            System.out.println("RPC failed: " + e.getMessage());
         }
     }
-}
 
     private void getBalance(Scanner sc) {
         System.out.print("Account ID: ");
         String id = sc.nextLine();
 
-        BalanceRequest request =
-                BalanceRequest.newBuilder()
-                        .setAccountId(id)
-                        .build();
-
+        BalanceRequest req = BalanceRequest.newBuilder().setAccountId(id).build();
         try {
-            BalanceResponse res = stub.getBalance(request);
-            System.out.println("Balance: " + res.getBalance());
-
-        } catch (Exception e) {
-            System.out.println("Server unavailable, retrying...");
-            try {
-                BalanceResponse res = stub.getBalance(request);
-                System.out.println("Balance: " + res.getBalance());
-            } catch (Exception ex) {
-                System.out.println("Failed to get balance");
+            BalanceResponse res = getStub(id).getBalance(req);
+            if (res.getBalance() < 0) {
+                System.out.println("Error: Account not found or wrong shard");
+            } else {
+                System.out.println("Balance for " + id + ": " + res.getBalance());
             }
+        } catch (Exception e) {
+            System.out.println("RPC failed: " + e.getMessage());
         }
     }
-
-
-//    private void getBalance(Scanner sc) {
-//        System.out.print("Account ID: ");
-//        String id = sc.nextLine();
-//
-//        BalanceResponse res =
-//                stub.getBalance(
-//                        BalanceRequest.newBuilder()
-//                                .setAccountId(id)
-//                                .build()
-//                );
-//
-//        System.out.println("Balance: " + res.getBalance());
-//    }
-
-//    private void deposit(Scanner sc) {
-//        System.out.print("Account ID: ");
-//        String id = sc.nextLine();
-//
-//        System.out.print("Amount: ");
-//        double amount = sc.nextDouble();
-//        sc.nextLine();
-//
-//        TransactionResponse res =
-//                stub.deposit(
-//                        TransactionRequest.newBuilder()
-//                                .setAccountId(id)
-//                                .setAmount(amount)
-//                                .build()
-//                );
-//
-//        System.out.println(res.getMessage()
-//                + " | Balance: " + res.getBalance());
-//    }
 
     private void deposit(Scanner sc) {
         System.out.print("Account ID: ");
         String id = sc.nextLine();
-
         System.out.print("Amount: ");
-        double amount = sc.nextDouble();
-        sc.nextLine();
+        double amount = Double.parseDouble(sc.nextLine());
 
-//        TransactionRequest request =
-//                TransactionRequest.newBuilder()
-//                        .setAccountId(id)
-//                        .setAmount(amount)
-//                        .build();
-        TransactionRequest request =
-                TransactionRequest.newBuilder()
-                        .setAccountId(id)
-                        .setAmount(amount)
-                        .setRequestId(UUID.randomUUID().toString())
-                        .build();
-
+        TransactionRequest req = TransactionRequest.newBuilder()
+                .setAccountId(id)
+                .setAmount(amount)
+                .setRequestId(UUID.randomUUID().toString())
+                .build();
         try {
-            TransactionResponse res = stub.deposit(request);
-            System.out.println(res.getMessage()
-                    + " | Balance: " + res.getBalance());
-
+            TransactionResponse res = getStub(id).deposit(req);
+            System.out.println(res.getMessage() + " | New Balance: " + res.getBalance());
         } catch (Exception e) {
-            System.out.println("Deposit failed, retrying...");
-
-            try {
-                TransactionResponse res = stub.deposit(request);
-                System.out.println(res.getMessage()
-                        + " | Balance: " + res.getBalance());
-            } catch (Exception ex) {
-                System.out.println("Deposit failed after retry");
-            }
+            System.out.println("RPC failed: " + e.getMessage());
         }
     }
 
+    private void withdraw(Scanner sc) {
+        System.out.print("Account ID: ");
+        String id = sc.nextLine();
+        System.out.print("Amount: ");
+        double amount = Double.parseDouble(sc.nextLine());
 
-//    private void withdraw(Scanner sc) {
-//        System.out.print("Account ID: ");
-//        String id = sc.nextLine();
-//
-//        System.out.print("Amount: ");
-//        double amount = sc.nextDouble();
-//        sc.nextLine();
-//
-//        TransactionResponse res =
-//                stub.withdraw(
-//                        TransactionRequest.newBuilder()
-//                                .setAccountId(id)
-//                                .setAmount(amount)
-//                                .build()
-//                );
-//
-//        System.out.println(res.getMessage()
-//                + " | Balance: " + res.getBalance());
-//    }
-private void withdraw(Scanner sc) {
-    System.out.print("Account ID: ");
-    String id = sc.nextLine();
+        TransactionRequest req = TransactionRequest.newBuilder()
+                .setAccountId(id)
+                .setAmount(amount)
+                .setRequestId(UUID.randomUUID().toString())
+                .build();
+        try {
+            TransactionResponse res = getStub(id).withdraw(req);
+            System.out.println(res.getMessage() + " | New Balance: " + res.getBalance());
+        } catch (Exception e) {
+            System.out.println("RPC failed: " + e.getMessage());
+        }
+    }
 
-    System.out.print("Amount: ");
-    double amount = sc.nextDouble();
-    sc.nextLine();
+    private void transfer(Scanner sc) {
+        System.out.print("From Account ID: ");
+        String from = sc.nextLine();
+        System.out.print("To Account ID: ");
+        String to = sc.nextLine();
+        System.out.print("Amount: ");
+        double amount = Double.parseDouble(sc.nextLine());
 
-//    TransactionRequest request =
-//            TransactionRequest.newBuilder()
-//                    .setAccountId(id)
-//                    .setAmount(amount)
-//                    .build();
-
-    TransactionRequest request =
-            TransactionRequest.newBuilder()
-                    .setAccountId(id)
-                    .setAmount(amount)
-                    .setRequestId(UUID.randomUUID().toString())
-                    .build();
-    try {
-        TransactionResponse res = stub.withdraw(request);
-        System.out.println(res.getMessage()
-                + " | Balance: " + res.getBalance());
-
-    } catch (Exception e) {
-        System.out.println("Withdraw failed, retrying...");
+        TransferRequest req = TransferRequest.newBuilder()
+                .setFromAccountId(from)
+                .setToAccountId(to)
+                .setAmount(amount)
+                .setRequestId(UUID.randomUUID().toString())
+                .build();
 
         try {
-            TransactionResponse res = stub.withdraw(request);
-            System.out.println(res.getMessage()
-                    + " | Balance: " + res.getBalance());
-        } catch (Exception ex) {
-            System.out.println("Withdraw failed after retry");
+            // Transfers are initiated at the source account's shard
+            TransferResponse res = getStub(from).transfer(req);
+            System.out.println("TRANSFER RESULT: " + res.getMessage());
+            if (res.getSuccess()) {
+                System.out.println("Transaction confirmed across shards.");
+            }
+        } catch (Exception e) {
+            System.out.println("Transfer RPC failed: " + e.getMessage());
         }
     }
-}
 
+    private void shutdown() {
+        channels.values().forEach(ManagedChannel::shutdown);
+        System.out.println("Channels closed. Goodbye!");
+    }
 
     public static void main(String[] args) {
-
-        String host = "localhost";
-        int port = 9000;
-
-        if (args.length >= 2) {
-            host = args[0];
-            port = Integer.parseInt(args[1]);
-        }
-
-        WalletClient client = new WalletClient(host, port);
-        client.start();
+        new WalletClient().start();
     }
 }

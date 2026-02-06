@@ -26,6 +26,10 @@ service WalletService {
   // Withdraw money
   rpc Withdraw (TransactionRequest)
       returns (TransactionResponse);
+
+  // Transfer money between accounts
+  rpc Transfer (TransferRequest)
+      returns (TransferResponse);
 }
 
 /* =========================
@@ -59,4 +63,16 @@ message TransactionResponse {
   bool success = 1;
   double balance = 2;
   string message = 3;
+}
+
+message TransferRequest {
+  string from_account_id = 1;
+  string to_account_id = 2;
+  double amount = 3;
+  string request_id = 4;
+}
+
+message TransferResponse {
+  bool success = 1;
+  string message = 2;
 }
