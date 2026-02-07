@@ -8,22 +8,23 @@ public class WalletServer {
 
     public static void main(String[] args) throws Exception {
 
-        int port = (args.length > 0) ? Integer.parseInt(args[0]) : 9000;
-
-        // --- Leader Election ---
-        LeaderElection election = new LeaderElection();
-        election.connect();
-
-        boolean isLeader = election.attemptLeadership();
-
-        if (!isLeader) {
-            System.out.println("Follower server – not serving requests");
-            Thread.sleep(Long.MAX_VALUE);
+        if (args.length < 2) {
+            System.err.println("Usage: WalletServer <port> <shardId>");
+            System.exit(1);
         }
 
+        int port = Integer.parseInt(args[0]);
+        String shardId = args[1];
+
+        // --- Leader Election ---
+        LeaderElection election = new LeaderElection(shardId);
+        election.connect();
+
+        System.out.println("Shard " + shardId + ": Participating in leader election...");
+        election.awaitLeadership();
 
         WalletStore store = new WalletStore();
-        WalletServiceImpl service = new WalletServiceImpl(store);
+        WalletServiceImpl service = new WalletServiceImpl(store, shardId);
 
         Server server = ServerBuilder
                 .forPort(port)
@@ -31,7 +32,7 @@ public class WalletServer {
                 .build();
 
         server.start();
-        System.out.println("Wallet Server (LEADER) started on port " + port);
+        System.out.println("Wallet Server (LEADER for Shard " + shardId + ") started on port " + port);
 
         server.awaitTermination();
     }
